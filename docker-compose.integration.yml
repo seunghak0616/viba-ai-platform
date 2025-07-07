@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Node.js 메인 백엔드 서버
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend.dev
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - AI_SERVICE_URL=http://ai-service:8000
+      - DATABASE_URL=file:./dev.db
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      - ai-service
+    networks:
+      - viba-network
+
+  # Python AI 마이크로서비스
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_SERVICE_PORT=8000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VIBA_SECRET_KEY=${VIBA_SECRET_KEY}
+    volumes:
+      - ./ai-service:/app
+      - ./nlp-engine:/app/nlp-engine
+    networks:
+      - viba-network
+
+  # React 프론트엔드
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000/api
+      - REACT_APP_AI_API_URL=http://localhost:5000/api/ai
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - viba-network
+
+  # Redis (세션 관리, 캐싱)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - viba-network
+
+volumes:
+  redis_data:
+
+networks:
+  viba-network:
+    driver: bridge

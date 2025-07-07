@@ -1,0 +1,444 @@
+name: VIBA AI 종합 테스트 파이프라인
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * *'  # 매일 새벽 2시 실행
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+  POSTGRES_VERSION: '15'
+
+jobs:
+  # ============================================================================
+  # 1. 단위 테스트 (병렬 실행)
+  # ============================================================================
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [nlp, design-theory, bim-generation, performance-analysis, theory-application]
+      fail-fast: false
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Install Node.js 의존성
+        run: |
+          npm ci
+          cd nlp-engine && npm ci
+          
+      - name: Install Python 의존성
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r nlp-engine/requirements.txt
+          
+      - name: Download AI 모델 (캐시)
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/huggingface
+            nlp-engine/models
+          key: ai-models-${{ hashFiles('nlp-engine/model_config.json') }}
+          
+      - name: Run ${{ matrix.component }} 단위 테스트
+        run: |
+          echo "🧪 Running unit tests for ${{ matrix.component }}"
+          npm run test:unit:${{ matrix.component }}
+          
+      - name: Run Python 단위 테스트
+        run: |
+          cd nlp-engine
+          python -m pytest tests/unit/${{ matrix.component }}/ -v --tb=short
+          
+      - name: Upload 테스트 결과
+        uses: actions/upload-artifact@v3
+        with:
+          name: unit-test-results-${{ matrix.component }}
+          path: |
+            test-results/
+            coverage/
+            
+      - name: Upload 테스트 커버리지
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: unit-${{ matrix.component }}
+
+  # ============================================================================
+  # 2. 통합 테스트
+  # ============================================================================
+  integration-tests:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:${{ env.POSTGRES_VERSION }}
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: viba_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Install 의존성
+        run: |
+          npm ci
+          cd nlp-engine && npm ci && pip install -r requirements.txt
+          
+      - name: Setup 테스트 데이터베이스
+        run: |
+          npm run db:reset:test
+          npm run data:seed:test
+          
+      - name: Run 다중 에이전트 통합 테스트
+        env:
+          DATABASE_URL: postgresql://postgres:testpassword@localhost:5432/viba_test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          echo "🤖 Running multi-agent integration tests"
+          npm run test:integration:multi-agent
+          
+      - name: Run MCP 통합 테스트
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_TEST_API_KEY }}
+          TEST_MODE: true
+        run: |
+          echo "🔗 Running MCP integration tests"
+          npm run test:integration:mcp
+          
+      - name: Upload 통합 테스트 결과
+        uses: actions/upload-artifact@v3
+        with:
+          name: integration-test-results
+          path: test-results/integration/
+
+  # ============================================================================
+  # 3. 성능 테스트
+  # ============================================================================
+  performance-tests:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Install K6 (부하 테스트)
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+          
+      - name: Install 의존성
+        run: |
+          npm ci
+          pip install -r requirements.txt
+          
+      - name: Run AI 모델 성능 테스트
+        run: |
+          echo "🚀 Running AI model performance tests"
+          python nlp-engine/tests/performance/model_performance_test.py
+          
+      - name: Run API 부하 테스트
+        run: |
+          echo "📊 Running API load tests"
+          k6 run tests/performance/api_load_test.js
+          
+      - name: Upload 성능 테스트 결과
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-results
+          path: |
+            test-results/performance/
+            performance-reports/
+
+  # ============================================================================
+  # 4. E2E 테스트 (종단간)
+  # ============================================================================
+  e2e-tests:
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install 의존성
+        run: npm ci
+        
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+        
+      - name: Build 프론트엔드
+        run: npm run build
+        
+      - name: Start 전체 시스템
+        run: |
+          npm run start:test-env &
+          sleep 30  # 시스템 시작 대기
+          
+      - name: Run E2E 테스트
+        run: |
+          echo "🎭 Running end-to-end tests"
+          npx playwright test tests/e2e/
+          
+      - name: Upload E2E 테스트 결과
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: e2e-test-results
+          path: |
+            test-results/e2e/
+            playwright-report/
+
+  # ============================================================================
+  # 5. 보안 스캔
+  # ============================================================================
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Run 의존성 보안 스캔
+        run: |
+          npm audit --audit-level high
+          pip-audit
+          
+      - name: Run 코드 보안 스캔 (Semgrep)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/typescript
+            p/python
+            
+      - name: Upload 보안 스캔 결과
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: security-reports/
+
+  # ============================================================================
+  # 6. 코드 품질 분석
+  # ============================================================================
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarQube를 위한 전체 히스토리
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install 의존성
+        run: npm ci
+        
+      - name: Run ESLint
+        run: npm run lint:check
+        
+      - name: Run Prettier 체크
+        run: npm run format:check
+        
+      - name: Run TypeScript 타입 체크
+        run: npm run type-check
+        
+      - name: SonarQube 스캔
+        uses: sonarqube-quality-gate-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ============================================================================
+  # 7. 종합 리포트 생성
+  # ============================================================================
+  generate-report:
+    needs: [unit-tests, integration-tests, performance-tests, e2e-tests, security-scan, code-quality]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Download 모든 테스트 결과
+        uses: actions/download-artifact@v3
+        
+      - name: Setup Python (리포트 생성용)
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install 리포트 생성 도구
+        run: pip install jinja2 matplotlib pandas
+        
+      - name: Generate 종합 테스트 리포트
+        run: |
+          python scripts/generate_test_report.py \
+            --unit-results unit-test-results-*/ \
+            --integration-results integration-test-results/ \
+            --performance-results performance-test-results/ \
+            --e2e-results e2e-test-results/ \
+            --security-results security-scan-results/ \
+            --output comprehensive-test-report.html
+            
+      - name: Upload 종합 리포트
+        uses: actions/upload-artifact@v3
+        with:
+          name: comprehensive-test-report
+          path: |
+            comprehensive-test-report.html
+            test-summary.json
+            
+      - name: Comment PR with 테스트 결과
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('test-summary.json', 'utf8'));
+            
+            const comment = `
+            ## 🤖 VIBA AI 테스트 결과
+            
+            ### 📊 전체 요약
+            - **총 테스트**: ${summary.total_tests}
+            - **성공**: ${summary.passed_tests} ✅
+            - **실패**: ${summary.failed_tests} ❌
+            - **성공률**: ${summary.success_rate}%
+            
+            ### 🧪 컴포넌트별 결과
+            ${Object.entries(summary.components).map(([component, result]) => 
+              `- **${component}**: ${result.status} (${result.accuracy})`
+            ).join('\n')}
+            
+            ### 🎯 AI 성능 지표
+            - **NLP 정확도**: ${summary.ai_metrics.nlp_accuracy}%
+            - **설계이론 적용**: ${summary.ai_metrics.design_theory_accuracy}%
+            - **BIM 생성 정확도**: ${summary.ai_metrics.bim_generation_accuracy}%
+            
+            [📋 상세 리포트 보기](${summary.report_url})
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # ============================================================================
+  # 8. 배포 준비 (main 브랜치만)
+  # ============================================================================
+  deploy-staging:
+    needs: [unit-tests, integration-tests, performance-tests, e2e-tests, security-scan, code-quality]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install 의존성
+        run: npm ci
+        
+      - name: Build 프로덕션
+        run: npm run build:production
+        
+      - name: Build Docker 이미지
+        run: |
+          docker build -t viba-ai:${{ github.sha }} .
+          docker build -t viba-nlp:${{ github.sha }} ./nlp-engine
+          
+      - name: Deploy to Staging
+        run: |
+          echo "🚀 Deploying to staging environment"
+          # 실제 배포 스크립트는 환경에 따라 구성
+          
+      - name: Run Smoke 테스트
+        run: |
+          echo "💨 Running smoke tests on staging"
+          npm run test:smoke:staging

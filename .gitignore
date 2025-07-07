@@ -1,0 +1,93 @@
+# VIBA AI 프로젝트 .gitignore
+# =================================
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+backups/
+
+# Uploads
+uploads/
+temp/
+
+# Build outputs
+build/
+dist/
+out/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+docker-compose.override.yml
+
+# Test screenshots (정리 대상)
+*debug*.png
+*test*.png
+*result*.png
+*screenshot*.png
+3d-viewer*.png
+bim-platform*.png
+
+# Test files (정리 대상)
+*test*.js
+*debug*.js
+*manual*.js
+*simple*.js
+*visual*.js
+*quick*.js
+*final*.js
+*e2e*.js
+*integration*.js
+
+# Temporary JSON files
+architect_login.json
+login_user.json
+test_user.json
+nlp_test.json
+
+# MCP and tools
+.claude/
+.vooster/
+
+# Backup directories (정리 대상)
+viba-integrated/
+frontend\ 2/
+ai-microservice/
+
+# Log files
+backend.log
+frontend.log

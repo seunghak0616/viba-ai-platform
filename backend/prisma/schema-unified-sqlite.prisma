@@ -1,0 +1,421 @@
+// VIBA AI 통합 데이터베이스 스키마 (SQLite용)
+// 기존 기능 + AI 에이전트 + 협업 + 파일 관리 통합
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// 사용자 관리
+// ============================================================================
+
+model User {
+  id                String     @id @default(cuid())
+  email             String     @unique
+  password          String
+  name              String
+  company           String?
+  department        String?
+  position          String?
+  phone             String?
+  role              String     @default("VIEWER") // SUPERADMIN, ADMIN, ARCHITECT, ENGINEER, DESIGNER, CLIENT, VIEWER
+  isActive          Boolean    @default(true)
+  emailVerified     Boolean    @default(false)
+  emailVerifiedAt   DateTime?
+  
+  // 보안 관련 필드
+  loginAttempts     Int        @default(0)
+  lockUntil         DateTime?
+  passwordChangedAt DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  
+  // 사용자 설정 (JSON 문자열로 저장)
+  preferences       String?    // UI 설정, 언어, 테마 등 (JSON)
+  subscription      String?    // 구독 정보 (JSON)
+  profile           String?    // 프로필 정보 (JSON)
+  notificationSettings String? // 알림 선호도 (JSON)
+  
+  // 타임스탬프
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?  // 소프트 삭제
+  
+  // 관계
+  projects          Project[]
+  refreshTokens     RefreshToken[]
+  bimModels         BimModel[]
+  activityLogs      ActivityLog[]
+  collaborations    Collaboration[]
+  projectFiles      ProjectFile[]
+  aiSessions        AISession[]
+  
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+// 프로젝트 관리
+// ============================================================================
+
+model Project {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  status      String          @default("DRAFT") // DRAFT, IN_PROGRESS, REVIEW, COMPLETED, ARCHIVED, DELETED
+  
+  // 프로젝트 메타데이터 (JSON 문자열)
+  metadata    String?         // 프로젝트 기본 정보
+  settings    String?         // 프로젝트 설정
+  tags        String?         // 태그 배열
+  buildingInfo String?        // 건물 정보 (층수, 면적, 용도 등)
+  location     String?        // 위치 정보
+  regulations  String?        // 규정 준수 정보
+  
+  // 소유자 정보
+  userId      String
+  
+  // 공개 설정
+  isPublic    Boolean        @default(false)
+  isTemplate  Boolean        @default(false)
+  
+  // 타임스탬프
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?      // 소프트 삭제
+  
+  // 관계
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bimModels     BimModel[]
+  files         ProjectFile[]
+  collaborators Collaboration[]
+  activityLogs  ActivityLog[]
+  aiSessions    AISession[]
+  
+  @@map("projects")
+}
+
+// ============================================================================
+// BIM 모델 관리
+// ============================================================================
+
+model BimModel {
+  id              String        @id @default(cuid())
+  name            String
+  description     String?
+  type            String        // APARTMENT, HOUSE, OFFICE, COMMERCIAL, INDUSTRIAL, PUBLIC, CUSTOM
+  
+  // 자연어 입력 및 처리 결과
+  naturalLanguageInput String?  // 원본 자연어 입력
+  processedParams     String?   // NLP 처리 결과 파라미터 (JSON)
+  
+  // 기하학적 데이터 (JSON 문자열)
+  geometryData    String?       // 3D 기하학 데이터
+  materials       String?       // 재료 정보
+  dimensions      String?       // 치수 정보
+  spatial         String?       // 공간 관계 정보
+  
+  // BIM 메타데이터 (JSON 문자열)
+  metadata        String?       // IFC 메타데이터
+  properties      String?       // 속성 정보
+  constraints     String?       // 제약 조건
+  performanceData String?       // 에너지, 구조 등 성능 분석 결과
+  
+  // 파일 정보
+  ifcFileUrl      String?       // IFC 파일 URL
+  thumbnailUrl    String?       // 썸네일 이미지 URL
+  previewUrl      String?       // 미리보기 이미지 URL
+  
+  // 버전 관리
+  version         Int           @default(1)
+  parentId        String?       // 상위 버전 ID
+  changeLog       String?       // 변경 이력 (JSON)
+  
+  // 상태 정보
+  isPublic        Boolean       @default(false)
+  isTemplate      Boolean       @default(false)
+  isValidated     Boolean       @default(false)  // 검증 완료 여부
+  
+  // 소유자 및 프로젝트 정보
+  userId          String
+  projectId       String
+  
+  // 타임스탬프
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?     // 소프트 삭제
+  
+  // 관계
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent          BimModel?     @relation("BimModelVersions", fields: [parentId], references: [id])
+  children        BimModel[]    @relation("BimModelVersions")
+  files           ProjectFile[]
+  activityLogs    ActivityLog[]
+  
+  @@map("bim_models")
+}
+
+// ============================================================================
+// 파일 관리
+// ============================================================================
+
+model ProjectFile {
+  id           String    @id @default(cuid())
+  filename     String    // 저장된 파일명
+  originalName String    // 원본 파일명
+  mimeType     String
+  size         Int       // 파일 크기 (bytes)
+  fileType     String    // IFC, DWG, DXF, PDF, IMAGE, MODEL, DOCUMENT
+  url          String    // 파일 접근 URL
+  metadata     String?   // 파일 메타데이터 (JSON)
+  
+  // 파일 처리 상태
+  isProcessed  Boolean   @default(false)
+  processedAt  DateTime?
+  processingLog String?  // 처리 로그 (JSON)
+  
+  // 소유자 정보
+  userId       String
+  projectId    String
+  bimModelId   String?
+  
+  // 파일 분류
+  category     String?   // 파일 카테고리
+  tags         String?   // 파일 태그 (JSON)
+  
+  // 타임스탬프
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime? // 소프트 삭제
+  
+  // 관계
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bimModel     BimModel? @relation(fields: [bimModelId], references: [id], onDelete: Cascade)
+  
+  @@map("project_files")
+}
+
+// ============================================================================
+// 협업 관리
+// ============================================================================
+
+model Collaboration {
+  id          String    @id @default(cuid())
+  userId      String
+  projectId   String
+  role        String    @default("VIEWER") // OWNER, ADMIN, EDITOR, REVIEWER, VIEWER
+  permissions String?   // 세부 권한 설정 (JSON)
+  
+  // 초대 정보
+  invitedBy   String?
+  invitedAt   DateTime?
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  
+  // 활성 상태
+  isActive    Boolean   @default(true)
+  
+  // 타임스탬프
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // 관계
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, projectId])
+  @@map("collaborations")
+}
+
+// ============================================================================
+// AI 에이전트 관리
+// ============================================================================
+
+model AISession {
+  id          String    @id @default(cuid())
+  sessionId   String    @unique  // UUID 세션 ID
+  agentId     String             // AI 에이전트 ID
+  agentName   String             // AI 에이전트 이름
+  status      String    @default("ACTIVE") // ACTIVE, IDLE, EXPIRED, TERMINATED
+  
+  // 세션 정보
+  userId      String?
+  projectId   String?
+  context     String?   // 세션 컨텍스트 (JSON)
+  
+  // 메시지 저장
+  messages    String?   // 메시지 배열 (JSON, 최근 50개)
+  messageCount Int      @default(0)
+  
+  // 성능 메트릭
+  responseTime Float?   // 평균 응답 시간 (ms)
+  tokenUsage   String?  // 토큰 사용량 (JSON)
+  
+  // 만료 설정
+  expiresAt   DateTime
+  lastActiveAt DateTime @default(now())
+  
+  // 타임스탬프
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // 관계
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  @@map("ai_sessions")
+}
+
+// ============================================================================
+// 로깅 및 모니터링
+// ============================================================================
+
+model ActivityLog {
+  id         String    @id @default(cuid())
+  action     String    // 수행된 작업 (CREATE_PROJECT, UPLOAD_FILE, AI_CHAT 등)
+  details    String?   // 작업 세부 정보 (JSON)
+  result     String?   // 작업 결과 (SUCCESS, FAILED, PARTIAL)
+  
+  // 요청 정보
+  ipAddress  String?
+  userAgent  String?
+  sessionId  String?   // AI 세션 ID (해당되는 경우)
+  
+  // 연관 정보
+  userId     String
+  projectId  String?
+  bimModelId String?
+  
+  // 타임스탬프
+  createdAt  DateTime  @default(now())
+  
+  // 관계
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bimModel   BimModel? @relation(fields: [bimModelId], references: [id], onDelete: Cascade)
+  
+  @@map("activity_logs")
+}
+
+model ErrorLog {
+  id          String   @id @default(cuid())
+  level       String   // ERROR, WARN, INFO, DEBUG
+  message     String
+  stack       String?
+  context     String?  // 에러 발생 컨텍스트 (JSON)
+  
+  // 요청 정보
+  method      String?
+  url         String?
+  ipAddress   String?
+  userAgent   String?
+  userId      String?
+  
+  // 분류
+  category    String?  // API, AUTH, AI, BIM, FILE 등
+  tags        String?  // 에러 태그 (JSON)
+  
+  // 해결 상태
+  isResolved  Boolean  @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  
+  // 타임스탬프
+  createdAt   DateTime @default(now())
+  
+  @@map("error_logs")
+}
+
+// ============================================================================
+// 시스템 관리
+// ============================================================================
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   // JSON 문자열로 저장
+  category  String   // API, UI, SECURITY, AI, BIM 등
+  
+  // 설정 메타데이터
+  description String?
+  isActive    Boolean @default(true)
+  
+  // 타임스탬프
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("system_configs")
+}
+
+// ============================================================================
+// 캐싱 및 최적화
+// ============================================================================
+
+model NlpCache {
+  id               String   @id @default(cuid())
+  inputText        String   // 입력 자연어 텍스트
+  inputHash        String   @unique // 입력 텍스트의 해시값
+  processedResult  String   // NLP 처리 결과 (JSON)
+  language         String   @default("ko") // 언어 코드
+  confidence       Float?   // 신뢰도 점수
+  
+  // 사용 통계
+  hitCount         Int      @default(1)
+  lastUsedAt       DateTime @default(now())
+  
+  // 캐시 관리
+  expiresAt        DateTime?
+  isValid          Boolean  @default(true)
+  
+  // 타임스탬프
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  @@map("nlp_cache")
+}
+
+// ============================================================================
+// 통계 및 분석
+// ============================================================================
+
+model UsageStats {
+  id               String   @id @default(cuid())
+  date             DateTime // 날짜별 통계
+  userId           String?  // 사용자별 통계 (null이면 전체 통계)
+  
+  // 사용량 지표
+  apiCalls         Int      @default(0)
+  modelsGenerated  Int      @default(0)
+  filesUploaded    Int      @default(0)
+  aiMessages       Int      @default(0)  // AI 메시지 수
+  storageUsed      Int      @default(0)  // 스토리지 사용량 (bytes, SQLite는 BigInt 미지원으로 Int 사용)
+  
+  // 성능 지표
+  avgResponseTime  Float?   // 평균 응답 시간
+  errorRate        Float?   // 에러율
+  
+  // 타임스탬프
+  createdAt        DateTime @default(now())
+  
+  @@unique([date, userId])
+  @@map("usage_stats")
+}

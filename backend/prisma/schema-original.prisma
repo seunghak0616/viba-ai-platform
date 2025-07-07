@@ -1,0 +1,329 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 사용자 역할 열거형
+enum UserRole {
+  USER      // 일반 사용자
+  PREMIUM   // 프리미엄 사용자
+  ADMIN     // 관리자
+  ARCHITECT // 건축사
+}
+
+// 프로젝트 상태 열거형
+enum ProjectStatus {
+  DRAFT      // 초안
+  IN_PROGRESS // 진행 중
+  REVIEW     // 검토 중
+  COMPLETED  // 완료
+  ARCHIVED   // 보관됨
+}
+
+// BIM 모델 타입 열거형
+enum BimModelType {
+  APARTMENT    // 아파트
+  HOUSE        // 단독주택
+  OFFICE       // 사무실
+  COMMERCIAL   // 상업시설
+  INDUSTRIAL   // 산업시설
+  CUSTOM       // 사용자 정의
+}
+
+// 파일 타입 열거형
+enum FileType {
+  IFC    // Industry Foundation Classes
+  DWG    // AutoCAD Drawing
+  DXF    // Drawing Exchange Format
+  PDF    // Portable Document Format
+  IMAGE  // 이미지 파일
+  MODEL  // 3D 모델 파일
+}
+
+// 사용자 테이블
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String
+  name              String
+  company           String?
+  role              UserRole  @default(USER)
+  isActive          Boolean   @default(true)
+  emailVerified     Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  
+  // 보안 관련 필드
+  loginAttempts     Int       @default(0)
+  lockUntil         DateTime?
+  passwordChangedAt DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  
+  // 사용자 설정
+  preferences       Json?     // 사용자 설정 (JSON 형태)
+  subscription      Json?     // 구독 정보
+  
+  // 타임스탬프
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // 관계
+  projects          Project[]
+  refreshTokens     RefreshToken[]
+  bimModels         BimModel[]
+  activityLogs      ActivityLog[]
+  collaborations    Collaboration[]
+  
+  @@map("users")
+}
+
+// 리프레시 토큰 테이블
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // 관계
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("refresh_tokens")
+}
+
+// 프로젝트 테이블
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(DRAFT)
+  metadata    Json?         // 프로젝트 메타데이터
+  settings    Json?         // 프로젝트 설정
+  
+  // 소유자 정보
+  userId      String
+  
+  // 타임스탬프
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // 관계
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bimModels     BimModel[]
+  files         ProjectFile[]
+  collaborators Collaboration[]
+  activityLogs  ActivityLog[]
+  
+  @@map("projects")
+}
+
+// BIM 모델 테이블
+model BimModel {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+  type            BimModelType
+  
+  // 자연어 입력 및 처리 결과
+  naturalLanguageInput String?   // 원본 자연어 입력
+  processedParams     Json?      // NLP 처리 결과 파라미터
+  
+  // 기하학적 데이터
+  geometryData    Json?        // 3D 기하학 데이터
+  materials       Json?        // 재료 정보
+  dimensions      Json?        // 치수 정보
+  spatial         Json?        // 공간 관계 정보
+  
+  // 메타데이터
+  metadata        Json?        // IFC 메타데이터
+  properties      Json?        // 속성 정보
+  constraints     Json?        // 제약 조건
+  
+  // 파일 정보
+  ifcFileUrl      String?      // IFC 파일 URL
+  thumbnailUrl    String?      // 썸네일 이미지 URL
+  previewUrl      String?      // 미리보기 이미지 URL
+  
+  // 버전 관리
+  version         Int          @default(1)
+  parentId        String?      // 상위 버전 ID
+  
+  // 상태 정보
+  isPublic        Boolean      @default(false)
+  isTemplate      Boolean      @default(false)
+  
+  // 소유자 및 프로젝트 정보
+  userId          String
+  projectId       String
+  
+  // 타임스탬프
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  // 관계
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent          BimModel?    @relation("BimModelVersions", fields: [parentId], references: [id])
+  children        BimModel[]   @relation("BimModelVersions")
+  files           ProjectFile[]
+  activityLogs    ActivityLog[]
+  
+  @@map("bim_models")
+}
+
+// 프로젝트 파일 테이블
+model ProjectFile {
+  id           String   @id @default(cuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  fileType     FileType
+  url          String
+  metadata     Json?    // 파일 메타데이터
+  
+  // 소유자 정보
+  userId       String
+  projectId    String
+  bimModelId   String?
+  
+  // 타임스탬프
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // 관계
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bimModel     BimModel? @relation(fields: [bimModelId], references: [id], onDelete: Cascade)
+  
+  @@map("project_files")
+}
+
+// 협업 테이블
+model Collaboration {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String
+  role        String   // VIEWER, EDITOR, ADMIN
+  permissions Json?    // 세부 권한 설정
+  
+  // 초대 정보
+  invitedBy   String?
+  invitedAt   DateTime?
+  acceptedAt  DateTime?
+  
+  // 타임스탬프
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // 관계
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, projectId])
+  @@map("collaborations")
+}
+
+// 활동 로그 테이블
+model ActivityLog {
+  id         String    @id @default(cuid())
+  action     String    // 수행된 작업
+  details    Json?     // 작업 세부 정보
+  ipAddress  String?
+  userAgent  String?
+  
+  // 연관 정보
+  userId     String
+  projectId  String?
+  bimModelId String?
+  
+  // 타임스탬프
+  createdAt  DateTime  @default(now())
+  
+  // 관계
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bimModel   BimModel? @relation(fields: [bimModelId], references: [id], onDelete: Cascade)
+  
+  @@map("activity_logs")
+}
+
+// NLP 처리 캐시 테이블
+model NlpCache {
+  id               String   @id @default(cuid())
+  inputText        String   // 입력 자연어 텍스트
+  inputHash        String   @unique // 입력 텍스트의 해시값
+  processedResult  Json     // NLP 처리 결과
+  language         String   @default("ko") // 언어 코드
+  confidence       Float?   // 신뢰도 점수
+  
+  // 사용 통계
+  hitCount         Int      @default(1)
+  lastUsedAt       DateTime @default(now())
+  
+  // 타임스탬프
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  @@map("nlp_cache")
+}
+
+// 시스템 설정 테이블
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  category  String   // API, UI, SECURITY, etc.
+  
+  // 타임스탬프
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("system_configs")
+}
+
+// 사용 통계 테이블
+model UsageStats {
+  id               String   @id @default(cuid())
+  date             DateTime
+  userId           String?
+  
+  // 사용량 지표
+  apiCalls         Int      @default(0)
+  modelsGenerated  Int      @default(0)
+  filesUploaded    Int      @default(0)
+  storageUsed      BigInt   @default(0) // bytes
+  
+  // 타임스탬프
+  createdAt        DateTime @default(now())
+  
+  @@unique([date, userId])
+  @@map("usage_stats")
+}
+
+// 에러 로그 테이블
+model ErrorLog {
+  id          String   @id @default(cuid())
+  level       String   // ERROR, WARN, INFO
+  message     String
+  stack       String?
+  context     Json?    // 에러 발생 컨텍스트
+  
+  // 요청 정보
+  method      String?
+  url         String?
+  ipAddress   String?
+  userAgent   String?
+  userId      String?
+  
+  // 타임스탬프
+  createdAt   DateTime @default(now())
+  
+  @@map("error_logs")
+}

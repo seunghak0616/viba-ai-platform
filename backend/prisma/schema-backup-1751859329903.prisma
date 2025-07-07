@@ -1,0 +1,160 @@
+// SQLite용 간단한 스키마
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 사용자 테이블
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String
+  name              String
+  company           String?
+  role              String    @default("USER") // USER, PREMIUM, ADMIN, ARCHITECT
+  isActive          Boolean   @default(true)
+  emailVerified     Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  
+  // 보안 관련 필드
+  loginAttempts     Int       @default(0)
+  lockUntil         DateTime?
+  passwordChangedAt DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  
+  // 사용자 설정 (JSON 문자열로 저장)
+  preferences       String?   // JSON 형태의 설정
+  subscription      String?   // JSON 형태의 구독 정보
+  
+  // 타임스탬프
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // 관계
+  projects          Project[]
+  refreshTokens     RefreshToken[]
+  bimModels         BimModel[]
+  activityLogs      ActivityLog[]
+  
+  @@map("users")
+}
+
+// 리프레시 토큰 테이블
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // 관계
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("refresh_tokens")
+}
+
+// 프로젝트 테이블
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      String        @default("DRAFT") // DRAFT, IN_PROGRESS, REVIEW, COMPLETED, ARCHIVED
+  metadata    String?       // JSON 문자열
+  settings    String?       // JSON 문자열
+  
+  // 소유자 정보
+  userId      String
+  
+  // 타임스탬프
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // 관계
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bimModels     BimModel[]
+  activityLogs  ActivityLog[]
+  
+  @@map("projects")
+}
+
+// BIM 모델 테이블
+model BimModel {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+  type            String       // APARTMENT, HOUSE, OFFICE, COMMERCIAL, INDUSTRIAL, CUSTOM
+  
+  // 자연어 입력 및 처리 결과
+  naturalLanguageInput String?   // 원본 자연어 입력
+  processedParams     String?    // NLP 처리 결과 파라미터 (JSON 문자열)
+  
+  // 기하학적 데이터
+  geometryData    String?      // 3D 기하학 데이터 (JSON 문자열)
+  materials       String?      // 재료 정보 (JSON 문자열)
+  dimensions      String?      // 치수 정보 (JSON 문자열)
+  spatial         String?      // 공간 관계 정보 (JSON 문자열)
+  
+  // 메타데이터
+  metadata        String?      // IFC 메타데이터 (JSON 문자열)
+  properties      String?      // 속성 정보 (JSON 문자열)
+  constraints     String?      // 제약 조건 (JSON 문자열)
+  
+  // 파일 정보
+  ifcFileUrl      String?      // IFC 파일 URL
+  thumbnailUrl    String?      // 썸네일 이미지 URL
+  previewUrl      String?      // 미리보기 이미지 URL
+  
+  // 버전 관리
+  version         Int          @default(1)
+  parentId        String?      // 상위 버전 ID
+  
+  // 상태 정보
+  isPublic        Boolean      @default(false)
+  isTemplate      Boolean      @default(false)
+  
+  // 소유자 및 프로젝트 정보
+  userId          String
+  projectId       String
+  
+  // 타임스탬프
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  // 관계
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent          BimModel?    @relation("BimModelVersions", fields: [parentId], references: [id])
+  children        BimModel[]   @relation("BimModelVersions")
+  activityLogs    ActivityLog[]
+  
+  @@map("bim_models")
+}
+
+// 활동 로그 테이블
+model ActivityLog {
+  id         String    @id @default(cuid())
+  action     String    // 수행된 작업
+  details    String?   // 작업 세부 정보 (JSON 문자열)
+  ipAddress  String?
+  userAgent  String?
+  
+  // 연관 정보
+  userId     String
+  projectId  String?
+  bimModelId String?
+  
+  // 타임스탬프
+  createdAt  DateTime  @default(now())
+  
+  // 관계
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bimModel   BimModel? @relation(fields: [bimModelId], references: [id], onDelete: Cascade)
+  
+  @@map("activity_logs")
+}

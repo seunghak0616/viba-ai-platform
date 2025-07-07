@@ -1,0 +1,76 @@
+{
+  "name": "bim-frontend",
+  "version": "1.0.0",
+  "description": "바이브 코딩 BIM 플랫폼 프론트엔드",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint . --ext ts,tsx --fix",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^6.33.1",
+    "@babylonjs/inspector": "^6.33.1",
+    "@babylonjs/loaders": "^6.33.1",
+    "@babylonjs/materials": "^6.33.1",
+    "@babylonjs/serializers": "^6.33.1",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.15.2",
+    "@mui/material": "^5.15.2",
+    "@mui/x-data-grid": "^6.18.3",
+    "@mui/x-date-pickers": "^6.18.3",
+    "@reduxjs/toolkit": "^2.0.1",
+    "@types/three": "^0.158.3",
+    "axios": "^1.6.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.0.4",
+    "react-router-dom": "^6.20.1",
+    "react-hook-form": "^7.48.2",
+    "react-query": "^3.39.3",
+    "react-hot-toast": "^2.4.1",
+    "zustand": "^4.4.7",
+    "date-fns": "^2.30.0",
+    "lodash": "^4.17.21",
+    "socket.io-client": "^4.7.4",
+    "three": "^0.158.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@types/lodash": "^4.14.202",
+    "@types/uuid": "^9.0.7",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/ui": "^1.0.4",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "jsdom": "^23.0.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "vitest": "^1.0.4"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

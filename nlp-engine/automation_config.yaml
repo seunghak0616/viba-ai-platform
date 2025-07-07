@@ -1,0 +1,153 @@
+# VIBA AI 시스템 자동화 설정
+automation:
+  # 서비스 설정
+  services:
+    backend:
+      url: "http://localhost:8000"
+      health_endpoint: "/health"
+      startup_timeout: 30
+    frontend:
+      url: "http://localhost:3000"
+      startup_timeout: 60
+      
+  # 테스트 설정
+  testing:
+    headless: false
+    screenshot_on_failure: true
+    test_timeout: 30
+    retry_count: 3
+    
+  # 데이터 생성 설정
+  data_generation:
+    sample_projects: 5
+    sample_users: 10
+    ai_activity_frequency: 30  # 분
+    collaboration_events: 20
+    
+  # 모니터링 설정
+  monitoring:
+    check_interval: 10  # 분
+    cpu_threshold: 80   # %
+    memory_threshold: 80  # %
+    disk_threshold: 90   # %
+    
+  # 알림 설정
+  notifications:
+    enabled: true
+    email_alerts: false
+    slack_webhook: ""
+    
+  # 로그 설정
+  logging:
+    level: "INFO"
+    max_file_size: "10MB"
+    backup_count: 5
+    
+# AI 에이전트 자동화 설정
+ai_agents:
+  - id: "materials_specialist"
+    name: "재료 전문가 AI"
+    auto_responses: true
+    response_delay: 2  # 초
+    
+  - id: "design_theorist"
+    name: "설계 이론가 AI"
+    auto_responses: true
+    response_delay: 3
+    
+  - id: "bim_specialist"
+    name: "BIM 전문가 AI"
+    auto_responses: true
+    response_delay: 4
+    
+  - id: "structural_engineer"
+    name: "구조 엔지니어 AI"
+    auto_responses: true
+    response_delay: 3
+    
+  - id: "mep_specialist"
+    name: "MEP 전문가 AI"
+    auto_responses: true
+    response_delay: 5
+    
+  - id: "cost_estimator"
+    name: "비용 추정 AI"
+    auto_responses: true
+    response_delay: 2
+    
+  - id: "schedule_manager"
+    name: "일정 관리 AI"
+    auto_responses: true
+    response_delay: 3
+    
+  - id: "interior_designer"
+    name: "인테리어 디자인 AI"
+    auto_responses: true
+    response_delay: 4
+
+# UI 자동화 시나리오
+ui_scenarios:
+  - name: "full_user_journey"
+    description: "전체 사용자 여정 테스트"
+    steps:
+      - "login"
+      - "navigate_dashboard"
+      - "create_project"
+      - "start_ai_analysis"
+      - "view_results"
+      - "collaborate"
+      - "export_data"
+      
+  - name: "ai_agent_interaction"
+    description: "AI 에이전트 상호작용 테스트"
+    steps:
+      - "login"
+      - "goto_ai_agents"
+      - "start_chat_session"
+      - "send_multiple_messages"
+      - "verify_responses"
+      - "end_session"
+      
+  - name: "design_workflow"
+    description: "설계 워크플로우 테스트"
+    steps:
+      - "login"
+      - "goto_design_studio"
+      - "fill_project_info"
+      - "set_requirements"
+      - "run_ai_analysis"
+      - "review_results"
+      - "export_report"
+
+# 성능 테스트 설정
+performance:
+  load_testing:
+    concurrent_users: 10
+    ramp_up_time: 60  # 초
+    test_duration: 300  # 초
+    
+  stress_testing:
+    max_users: 50
+    cpu_limit: 95  # %
+    memory_limit: 95  # %
+    
+# 백업 및 복구 설정
+backup:
+  auto_backup: true
+  backup_interval: 24  # 시간
+  retention_days: 30
+  backup_location: "./backups"
+  
+# 보안 설정
+security:
+  api_rate_limiting: true
+  session_timeout: 3600  # 초
+  password_complexity: true
+  two_factor_auth: false
+
+# 개발 환경 설정
+development:
+  hot_reload: true
+  debug_mode: true
+  mock_ai_responses: true
+  skip_auth: false

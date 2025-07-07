@@ -1,0 +1,245 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # Prometheus - 메트릭 수집 및 저장
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: viba-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.localhost`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  # =============================================================================
+  # Grafana - 메트릭 시각화 대시보드
+  # =============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: viba-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.localhost`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # =============================================================================
+  # AlertManager - 알림 관리
+  # =============================================================================
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: viba-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+
+  # =============================================================================
+  # Node Exporter - 시스템 메트릭 수집
+  # =============================================================================
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: viba-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # cAdvisor - 컨테이너 메트릭 수집
+  # =============================================================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: viba-cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # Elasticsearch - 로그 저장
+  # =============================================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: viba-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # Kibana - 로그 시각화
+  # =============================================================================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: viba-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # Logstash - 로그 처리
+  # =============================================================================
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: viba-logstash
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+      - ./logstash/config:/usr/share/logstash/config
+    environment:
+      - "LS_JAVA_OPTS=-Xmx256m -Xms256m"
+    depends_on:
+      - elasticsearch
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # Jaeger - 분산 추적
+  # =============================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: viba-jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # Redis Exporter - Redis 메트릭
+  # =============================================================================
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: viba-redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://host.docker.internal:6379
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # PostgreSQL Exporter - 데이터베이스 메트릭
+  # =============================================================================
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: viba-postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://username:password@host.docker.internal:5432/viba?sslmode=disable
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+  # =============================================================================
+  # Nginx Prometheus Exporter - 웹서버 메트릭
+  # =============================================================================
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: viba-nginx-exporter
+    ports:
+      - "9113:9113"
+    command:
+      - -nginx.scrape-uri=http://host.docker.internal:80/nginx_status
+    networks:
+      - viba-monitoring
+    restart: unless-stopped
+
+# =============================================================================
+# 네트워크 및 볼륨 설정
+# =============================================================================
+networks:
+  viba-monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  elasticsearch_data:
+    driver: local

@@ -1,0 +1,75 @@
+{
+  "general_concepts": [
+    {
+      "name": "IfcRoot",
+      "description": "모든 엔티티의 기본 클래스이며, 고유 식별자(GUID), 이름, 설명, 개정 관리를 포함합니다.",
+      "attributes": [
+        {"name": "GlobalId", "type": "IfcGloballyUniqueId", "description": "고유 식별자", "mandatory": true},
+        {"name": "OwnerHistory", "type": "IfcOwnerHistory", "description": "소유 이력", "mandatory": false},
+        {"name": "Name", "type": "IfcLabel", "description": "선택적 이름", "mandatory": false},
+        {"name": "Description", "type": "IfcText", "description": "선택적 설명", "mandatory": false}
+      ],
+      "subtypes": ["IfcObjectDefinition", "IfcRelationship", "IfcPropertyDefinition"]
+    },
+    {
+      "name": "IfcObjectDefinition",
+      "description": "모델 내 객체(예: 제품, 프로세스, 제어)를 나타냅니다.",
+      "attributes": [
+        {"name": "HasAssignments", "type": "SET [0:?] OF IfcRelAssigns", "description": "이 객체에 대한 할당", "mandatory": false},
+        {"name": "IsDecomposedBy", "type": "SET [0:1] OF IfcRelDecomposes", "description": "분해 관계", "mandatory": false},
+        {"name": "IsDefinedBy", "type": "SET [0:?] OF IfcRelDefines", "description": "정의 관계", "mandatory": false}
+      ],
+      "subtypes": ["IfcProduct", "IfcProcess", "IfcControl", "IfcActor", "IfcGroup", "IfcResource"]
+    },
+    {
+      "name": "IfcRelationship",
+      "description": "객체 간 관계(예: 분해, 할당, 연결)를 나타냅니다.",
+      "subtypes": ["IfcRelDecomposes", "IfcRelAssigns", "IfcRelConnects", "IfcRelAssociates", "IfcRelDefines"]
+    },
+    {
+      "name": "IfcPropertyDefinition",
+      "description": "객체에 할당된 속성(예: 속성 세트, 수량 산출)을 나타냅니다.",
+      "subtypes": ["IfcPropertySetDefinition", "IfcQuantityDefinition"]
+    }
+  ],
+  "specific_entities": [
+    {
+      "name": "IfcWall",
+      "supertype": "IfcBuildingElement",
+      "description": "공간을 분할하거나 둘러싸는 수직 건축 요소입니다.",
+      "attributes": [
+        {"name": "GlobalId", "type": "IfcGloballyUniqueId", "description": "고유 식별자", "mandatory": true},
+        {"name": "OwnerHistory", "type": "IfcOwnerHistory", "description": "소유 이력", "mandatory": false},
+        {"name": "Name", "type": "IfcLabel", "description": "선택적 이름", "mandatory": false},
+        {"name": "Description", "type": "IfcText", "description": "선택적 설명", "mandatory": false},
+        {"name": "ObjectType", "type": "IfcLabel", "description": "객체 유형", "mandatory": false},
+        {"name": "ObjectPlacement", "type": "IfcObjectPlacement", "description": "공간 내 배치", "mandatory": false},
+        {"name": "Representation", "type": "IfcProductRepresentation", "description": "기하학적 표현", "mandatory": false},
+        {"name": "Tag", "type": "IfcIdentifier", "description": "선택적 태그", "mandatory": false},
+        {"name": "PredefinedType", "type": "IfcWallTypeEnum", "description": "벽 유형(예: STANDARD, POLYGONAL)", "mandatory": false}
+      ],
+      "relationships": [
+        {"type": "ContainedInStructure", "related_to": "IfcBuildingStorey"},
+        {"type": "HasOpenings", "related_to": "IfcOpeningElement"},
+        {"type": "HasMaterial", "related_to": "IfcMaterial"}
+      ],
+      "modeling_rules": [
+        "IfcBuildingStorey에 포함되어야 합니다.",
+        "IfcOpeningElement로 정의된 개구부를 가질 수 있습니다.",
+        "기하학적 표현(예: SweptSolid)이 있어야 합니다.",
+        "IfcMaterialLayerSetUsage를 사용하는 경우 Axis 및 SweptSolid 표현이 필요합니다."
+      ],
+      "associated_psets": ["Pset_WallCommon", "Pset_WallFireRating"],
+      "associated_qtos": ["Qto_WallBaseQuantities"],
+      "related_standards": ["ISO 16739-1:2024"]
+    }
+  ],
+  "general_principles": [
+    "모든 루트 엔티티(IfcRoot의 하위 유형)는 고유한 GUID를 가져야 합니다.",
+    "엔티티는 추가 속성을 위해 속성 세트(Pset)를 가질 수 있습니다(예: IfcWall의 Pset_WallCommon).",
+    "수량 산출(Qto)은 측정 가능한 수량을 정의합니다(예: IfcWall의 Qto_WallBaseQuantities).",
+    "관계는 엔티티 간 연결을 정의합니다(예: IfcRelContainedInSpatialStructure).",
+    "모델링 규칙은 일관성을 보장합니다(예: IfcWall은 IfcBuildingStorey에 포함되어야 함)."
+  ],
+  "ai_learning_instructions": "이 데이터는 BIM 모델링을 위한 IFC 스키마의 구조와 규칙을 제공합니다. 이를 사용하여 건축 요소의 정의, 속성, 관계 및 모델 일관성 보장 방법을 학습하세요. 예를 들어, 벽을 모델링할 때 IfcBuildingStorey에 포함되고 적절한 기하학적 표현을 가져야 합니다. 이 데이터는 BIM 툴의 규칙 기반 엔진 개발 및 IFC 표준 준수 검증에 사용될 수 있습니다."
+}

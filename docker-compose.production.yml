@@ -1,0 +1,211 @@
+version: '3.8'
+
+services:
+  # Nginx 리버스 프록시 (프로덕션 웹서버)
+  nginx:
+    image: nginx:alpine
+    container_name: viba-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - viba-network
+    restart: unless-stopped
+
+  # Node.js 메인 백엔드 서버 (프로덕션)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+      args:
+        NODE_ENV: production
+    container_name: viba-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+      - AI_SERVICE_URL=http://ai-service:8000
+      - DATABASE_URL=postgresql://viba_user:${DB_PASSWORD}@postgres:5432/viba_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - VIBA_SECRET_KEY=${VIBA_SECRET_KEY}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - LOG_LEVEL=info
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs/backend:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - ai-service
+    networks:
+      - viba-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Python AI 마이크로서비스 (프로덕션)
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile.prod
+    container_name: viba-ai-service
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_SERVICE_PORT=8000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VIBA_SECRET_KEY=${VIBA_SECRET_KEY}
+      - LOG_LEVEL=INFO
+      - MAX_FILE_SIZE=100MB
+      - TEMP_DIR=/tmp/viba-ai
+    volumes:
+      - ./ai-temp:/tmp/viba-ai
+      - ./logs/ai-service:/app/logs
+    networks:
+      - viba-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # React 프론트엔드 (프로덕션 빌드)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL}
+        REACT_APP_AI_API_URL: ${REACT_APP_AI_API_URL}
+    container_name: viba-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - viba-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    container_name: viba-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=viba_db
+      - POSTGRES_USER=viba_user
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./logs/postgres:/var/log/postgresql
+    networks:
+      - viba-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U viba_user -d viba_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Redis (세션 관리, 캐싱)
+  redis:
+    image: redis:7-alpine
+    container_name: viba-redis
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/etc/redis/redis.conf:ro
+      - ./logs/redis:/var/log/redis
+    networks:
+      - viba-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Prometheus 모니터링 (선택사항)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: viba-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - viba-network
+    restart: unless-stopped
+
+  # Grafana 대시보드 (선택사항)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: viba-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - viba-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  viba-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

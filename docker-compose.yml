@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # 백엔드 서비스
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend.dev
+    container_name: bim-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=development
+      - PORT=5001
+      - DATABASE_URL=file:/app/data/dev.db
+      - LOG_LEVEL=info
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/src:/app/src  # 개발 중 코드 변경 반영
+      - ./backend/logs:/app/logs  # 로그 디렉토리 마운트
+    depends_on:
+      - database
+    restart: unless-stopped
+    networks:
+      - bim-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 프론트엔드 서비스 (개발 모드)
+  frontend-dev:
+    image: node:18-alpine
+    container_name: bim-frontend-dev
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_BASE_URL=http://localhost:5001
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # node_modules 볼륨 마운트
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - bim-network
+
+  # 데이터베이스 (SQLite 파일 기반)
+  database:
+    image: alpine:latest
+    container_name: bim-database
+    volumes:
+      - ./backend/data:/data
+    command: ["sh", "-c", "mkdir -p /data && chmod 777 /data && tail -f /dev/null"]
+    networks:
+      - bim-network
+
+  # 개발 도구 (선택사항)
+  adminer:
+    image: adminer:latest
+    container_name: bim-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=database
+    depends_on:
+      - database
+    networks:
+      - bim-network
+    profiles:
+      - tools
+
+networks:
+  bim-network:
+    driver: bridge
+
+volumes:
+  node_modules:
